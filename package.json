@@ -1,0 +1,59 @@
+{
+  "name": "tslib-template",
+  "version": "0.1.0",
+  "description": "TypeScript library template.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "lint": "oxlint --type-aware",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "pnpm typecheck && pnpm lint && pnpm test -u",
+    "prepublishOnly": "pnpm build && pnpm check"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/you/tslib-template.git"
+  },
+  "bugs": {
+    "url": "https://github.com/you/tslib-template/issues"
+  },
+  "homepage": "https://github.com/you/tslib-template#readme",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.18.6",
+    "@vitest/coverage-v8": "^2.1.9",
+    "oxlint": "^1.16.0",
+    "oxlint-tsgolint": "^0.2.0",
+    "tsdown": "^0.15.4",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
