@@ -35,6 +35,7 @@ try {
 } finally {
   await lease.release(JSON.stringify(doc.frontiers()));
   // Or use FinalizeRegistry to release the lease
+  // Note: release can be invoked exactly once; a second call throws.
 }
 ```
 
@@ -44,7 +45,7 @@ try {
 
 - **Lock negotiation** – Calls use `navigator.locks.request` in supporting browsers so the lease state is mutated under an exclusive Web Lock. Fallback tabs use a fencing localStorage record with TTL heartbeats, and wake waiters via `storage` events plus a `BroadcastChannel`.
 - **Version gating** – Every lease carries document metadata. We only recycle a peer ID after the releasing tab supplies the version it used, and a future caller provides a strictly newer version according to the supplied comparator. This stops pre-load editing sessions from replaying IDs once the real document snapshot arrives.
-- **Stale recovery** – Active leases expire after five minutes without a heartbeat, pushing the ID back into the available pool alongside the last known version so long-lived crashes do not leak identifiers.
+- **Explicit release** – A lease is only recycled when the releasing tab provides its final version metadata. If a tab crashes or never releases, the ID stays reserved so it cannot be handed out again accidentally; any lease left active for 24 hours is simply discarded instead of being returned to the available pool.
 
 ## Development
 

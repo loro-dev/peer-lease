@@ -45,18 +45,50 @@ describe("acquirePeerId", () => {
     await Promise.all([firstLease.release("12"), secondLease.release("13")]);
   });
 
-  it("treats release as idempotent with the same version", async () => {
+  it("throws when release is called more than once", async () => {
     const lease = await acquirePeerId(() => "stable", "1", cmpVersion);
 
     await lease.release("2");
+    await expect(lease.release("2")).rejects.toThrow(/only be called once/);
+  });
+
+  it("rejects release attempts without a version", async () => {
+    const lease = await acquirePeerId(() => "alpha", "1", cmpVersion);
+
+    await expect(lease.release(""))
+      .rejects.toThrow(/non-empty version string/);
+
+    await lease.release("2");
+  });
+
+  it("does not reuse cached IDs when the comparator returns undefined", async () => {
+    let counter = 0;
+    const genFn = vi.fn(() => `peer-${counter++}`);
+
+    const lease = await acquirePeerId(genFn, "1", () => undefined);
     await lease.release("2");
 
-    const reused = await acquirePeerId(() => {
-      throw new Error("generator should not be called when a cached ID exists");
-    }, "3", cmpVersion);
+    const next = await acquirePeerId(genFn, "3", () => undefined);
 
-    expect(reused.value).toBe("stable");
-    await reused.release("4");
+    expect(next.value).toBe("peer-1");
+    expect(genFn).toHaveBeenCalledTimes(2);
+    await next.release("4");
+  });
+
+  it("drops cached leases after resetPeerLeaseState", async () => {
+    let counter = 0;
+    const genFn = vi.fn(() => `peer-${counter++}`);
+
+    const lease = await acquirePeerId(genFn, "1", cmpVersion);
+    await lease.release("2");
+
+    await resetPeerLeaseState();
+
+    const next = await acquirePeerId(genFn, "3", cmpVersion);
+
+    expect(next.value).toBe("peer-1");
+    expect(genFn).toHaveBeenCalledTimes(2);
+    await next.release("4");
   });
 
   it("generates a new ID when the version has not advanced", async () => {

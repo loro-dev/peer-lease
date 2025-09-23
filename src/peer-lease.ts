@@ -16,8 +16,8 @@ const ACQUIRE_TIMEOUT_MS = 5_000;
 const RETRY_DELAY_MS = 40;
 const RETRY_JITTER_MS = 60;
 const HEARTBEAT_INTERVAL_FRACTION = 0.3;
-const LEASE_STALE_AFTER_MS = 5 * 60_000;
 const MAX_GENERATION_ATTEMPTS = 32;
+const LEASE_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 interface CachedPeerId {
   id: string;
@@ -84,23 +84,23 @@ export class PeerIdLease {
     }
 
     if (this.released) {
-      return;
+      throw new Error("PeerIdLease.release() may only be called once");
     }
 
-    if (!this.releaseTask) {
-      this.releaseVersion = version;
-      this.releaseTask = (async () => {
-        try {
-          await this.releaseFn(this.value, version);
-          this.released = true;
-        } catch (error) {
-          this.releaseTask = undefined;
-          throw error;
-        }
-      })();
-    } else if (this.releaseVersion && this.releaseVersion !== version) {
-      throw new Error("release version mismatch for peer lease");
+    if (this.releaseTask) {
+      throw new Error("PeerIdLease.release() may only be called once");
     }
+
+    this.releaseVersion = version;
+    this.releaseTask = (async () => {
+      try {
+        await this.releaseFn(this.value, version);
+        this.released = true;
+      } catch (error) {
+        this.releaseTask = undefined;
+        throw error;
+      }
+    })();
 
     await this.releaseTask;
   }
@@ -292,7 +292,6 @@ function cleanupState(state: LeaseState, now: number): void {
 
     if (now - info.leasedAt >= LEASE_STALE_AFTER_MS) {
       delete state.active[key];
-      state.available.push({ id: key, version: info.version });
     }
   }
 }
