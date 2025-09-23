@@ -1,7 +1,7 @@
 {
-  "name": "tslib-template",
+  "name": "@loro-dev/peer-lease",
   "version": "0.1.0",
-  "description": "TypeScript library template.",
+  "description": "TypeScript library for safely reusing CRDT peer IDs without collisions.",
   "type": "module",
   "exports": {
     ".": {
@@ -28,6 +28,7 @@
     "build": "tsdown",
     "dev": "tsdown --watch",
     "test": "vitest run",
+    "test:browser": "vitest run --environment happy-dom",
     "coverage": "vitest run --coverage",
     "lint": "oxlint --type-aware",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -40,16 +41,17 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/you/tslib-template.git"
+    "url": "git+https://github.com/loro-dev/peer-lease.git"
   },
   "bugs": {
-    "url": "https://github.com/you/tslib-template/issues"
+    "url": "https://github.com/loro-dev/peer-lease/issues"
   },
-  "homepage": "https://github.com/you/tslib-template#readme",
+  "homepage": "https://github.com/loro-dev/peer-lease#readme",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.18.6",
     "@vitest/coverage-v8": "^2.1.9",
+    "happy-dom": "^18.0.1",
     "oxlint": "^1.16.0",
     "oxlint-tsgolint": "^0.2.0",
     "tsdown": "^0.15.4",
