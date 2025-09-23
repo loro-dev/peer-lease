@@ -58,8 +58,6 @@ export class PeerIdLease {
   readonly value: string;
   private readonly releaseFn: (value: string, version: string) => Promise<void>;
   private releaseTask?: Promise<void>;
-  private released = false;
-  private releaseVersion?: string;
 
   constructor(
     value: string,
@@ -83,19 +81,13 @@ export class PeerIdLease {
       throw new TypeError("release expects a non-empty version string");
     }
 
-    if (this.released) {
-      throw new Error("PeerIdLease.release() may only be called once");
-    }
-
     if (this.releaseTask) {
       throw new Error("PeerIdLease.release() may only be called once");
     }
 
-    this.releaseVersion = version;
     this.releaseTask = (async () => {
       try {
         await this.releaseFn(this.value, version);
-        this.released = true;
       } catch (error) {
         this.releaseTask = undefined;
         throw error;
