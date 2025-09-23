@@ -1,6 +1,6 @@
 {
   "name": "@loro-dev/peer-lease",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "TypeScript library for safely reusing CRDT peer IDs without collisions.",
   "type": "module",
   "exports": {
