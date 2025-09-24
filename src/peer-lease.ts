@@ -5,11 +5,11 @@ import {
   createMutex,
 } from "./lock.js";
 
-const LOCK_KEY = "peer-lease:lock";
-const LOCK_FENCE_KEY = "peer-lease:lock:fence";
-const LOCK_CHANNEL = "peer-lease:lock:channel";
-const LOCK_NAME = "peer-lease::mutex";
-const STATE_KEY = "peer-lease:state";
+const LOCK_KEY_PREFIX = "peer-lease:lock:";
+const LOCK_FENCE_KEY_PREFIX = "peer-lease:lock:fence:";
+const LOCK_CHANNEL_PREFIX = "peer-lease:lock:channel:";
+const LOCK_NAME_PREFIX = "peer-lease::mutex:";
+const STATE_KEY_PREFIX = "peer-lease:state:";
 
 const LOCK_TTL_MS = 10_000;
 const ACQUIRE_TIMEOUT_MS = 5_000;
@@ -35,20 +35,54 @@ interface LeaseState {
 }
 
 const storage: StorageLike = createLeaseStorage();
-const mutex: AsyncMutex = createMutex({
-  storage,
-  lockKey: LOCK_KEY,
-  fenceKey: LOCK_FENCE_KEY,
-  channelName: LOCK_CHANNEL,
-  webLockName: LOCK_NAME,
-  options: {
-    lockTtlMs: LOCK_TTL_MS,
-    acquireTimeoutMs: ACQUIRE_TIMEOUT_MS,
-    retryDelayMs: RETRY_DELAY_MS,
-    retryJitterMs: RETRY_JITTER_MS,
-    heartbeatIntervalFraction: HEARTBEAT_INTERVAL_FRACTION,
-  },
-});
+const mutexes = new Map<string, AsyncMutex>();
+const MUTEX_OPTIONS = {
+  lockTtlMs: LOCK_TTL_MS,
+  acquireTimeoutMs: ACQUIRE_TIMEOUT_MS,
+  retryDelayMs: RETRY_DELAY_MS,
+  retryJitterMs: RETRY_JITTER_MS,
+  heartbeatIntervalFraction: HEARTBEAT_INTERVAL_FRACTION,
+};
+
+function getDocMutex(docId: string): AsyncMutex {
+  let mutex = mutexes.get(docId);
+  if (!mutex) {
+    mutex = createMutex({
+      storage,
+      lockKey: getLockKey(docId),
+      fenceKey: getFenceKey(docId),
+      channelName: getChannelName(docId),
+      webLockName: getWebLockName(docId),
+      options: MUTEX_OPTIONS,
+    });
+    mutexes.set(docId, mutex);
+  }
+  return mutex;
+}
+
+function withDocMutex<T>(docId: string, callback: () => T | Promise<T>): Promise<T> {
+  return getDocMutex(docId).runExclusive(callback);
+}
+
+function getStateKey(docId: string): string {
+  return STATE_KEY_PREFIX + encodeDocId(docId);
+}
+
+function getLockKey(docId: string): string {
+  return LOCK_KEY_PREFIX + encodeDocId(docId);
+}
+
+function getFenceKey(docId: string): string {
+  return LOCK_FENCE_KEY_PREFIX + encodeDocId(docId);
+}
+
+function getChannelName(docId: string): string {
+  return LOCK_CHANNEL_PREFIX + encodeDocId(docId);
+}
+
+function getWebLockName(docId: string): string {
+  return LOCK_NAME_PREFIX + encodeDocId(docId);
+}
 
 /**
  * Represents a peer identifier lease that must be released once the caller
@@ -100,14 +134,20 @@ export class PeerIdLease {
 
 /**
  * Acquires a peer identifier that is safe to reuse for a caller operating on
- * the provided document version. The comparator must order versions so that a
- * positive result means “left is newer than right”.
+ * the provided document version of the supplied document ID. The comparator
+ * must order versions so that a positive result means “left is newer than
+ * right”.
  */
 export async function acquirePeerId(
+  docId: string,
   genFn: () => string,
   version: string,
   cmpVersion: (a: string, b: string) => number | undefined,
 ): Promise<PeerIdLease> {
+  if (!isNonEmptyString(docId)) {
+    throw new TypeError("acquirePeerId expects a non-empty docId string");
+  }
+
   if (typeof genFn !== "function") {
     throw new TypeError("acquirePeerId expects a generator function");
   }
@@ -120,7 +160,7 @@ export async function acquirePeerId(
     throw new TypeError("acquirePeerId expects a comparator function");
   }
 
-  const value = await withState(async (state) => {
+  const value = await withState(docId, async (state) => {
     let peerId: string | undefined;
 
     for (let index = 0; index < state.available.length; index += 1) {
@@ -156,56 +196,83 @@ export async function acquirePeerId(
     return peerId;
   });
 
-  return new PeerIdLease(value, releasePeerIdValue);
+  return new PeerIdLease(value, createReleaseFn(docId));
 }
 
-export async function resetPeerLeaseState(): Promise<void> {
-  await mutex.runExclusive(async () => {
-    storage.removeItem(STATE_KEY);
-    storage.removeItem(LOCK_KEY);
-    storage.removeItem(LOCK_FENCE_KEY);
-  });
-}
+export async function resetPeerLeaseState(docId?: string): Promise<void> {
+  if (docId !== undefined && !isNonEmptyString(docId)) {
+    throw new TypeError("resetPeerLeaseState expects a non-empty docId string");
+  }
 
-async function releasePeerIdValue(
-  value: string,
-  version: string,
-): Promise<void> {
-  if (!isNonEmptyString(value) || !isNonEmptyString(version)) {
+  if (docId) {
+    await withDocMutex(docId, async () => {
+      storage.removeItem(getStateKey(docId));
+      storage.removeItem(getLockKey(docId));
+      storage.removeItem(getFenceKey(docId));
+    });
     return;
   }
 
-  await withState(async (state) => {
-    if (state.active[value] !== undefined) {
-      delete state.active[value];
+  // Legacy reset: clear original global keys if present and flush
+  // state for any docIds encountered during this session.
+  storage.removeItem("peer-lease:state");
+  storage.removeItem("peer-lease:lock");
+  storage.removeItem("peer-lease:lock:fence");
+
+  const knownDocIds = Array.from(mutexes.keys());
+  await Promise.all(
+    knownDocIds.map((id) =>
+      withDocMutex(id, async () => {
+        storage.removeItem(getStateKey(id));
+        storage.removeItem(getLockKey(id));
+        storage.removeItem(getFenceKey(id));
+      }),
+    ),
+  );
+}
+
+function createReleaseFn(docId: string) {
+  return async function releasePeerIdValue(
+    value: string,
+    version: string,
+  ): Promise<void> {
+    if (!isNonEmptyString(value) || !isNonEmptyString(version)) {
+      return;
     }
 
-    const existingIndex = state.available.findIndex(
-      (entry) => entry.id === value,
-    );
-    if (existingIndex >= 0) {
-      state.available.splice(existingIndex, 1);
-    }
+    await withState(docId, async (state) => {
+      if (state.active[value] !== undefined) {
+        delete state.active[value];
+      }
 
-    state.available.push({ id: value, version });
-  });
+      const existingIndex = state.available.findIndex(
+        (entry) => entry.id === value,
+      );
+      if (existingIndex >= 0) {
+        state.available.splice(existingIndex, 1);
+      }
+
+      state.available.push({ id: value, version });
+    });
+  };
 }
 
 async function withState<T>(
+  docId: string,
   mutator: (state: LeaseState) => T | Promise<T>,
 ): Promise<T> {
-  return mutex.runExclusive(async () => {
-    const state = readState();
+  return withDocMutex(docId, async () => {
+    const state = readState(docId);
     cleanupState(state, Date.now());
     const result = await mutator(state);
     normalizeState(state);
-    writeState(state);
+    writeState(docId, state);
     return result;
   });
 }
 
-function readState(): LeaseState {
-  const raw = storage.getItem(STATE_KEY);
+function readState(docId: string): LeaseState {
+  const raw = storage.getItem(getStateKey(docId));
   if (!raw) {
     return { available: [], active: {} };
   }
@@ -261,13 +328,13 @@ function readState(): LeaseState {
   }
 }
 
-function writeState(state: LeaseState): void {
+function writeState(docId: string, state: LeaseState): void {
   if (state.available.length === 0 && Object.keys(state.active).length === 0) {
-    storage.removeItem(STATE_KEY);
+    storage.removeItem(getStateKey(docId));
     return;
   }
 
-  storage.setItem(STATE_KEY, JSON.stringify(state));
+  storage.setItem(getStateKey(docId), JSON.stringify(state));
 }
 
 function cleanupState(state: LeaseState, now: number): void {
@@ -346,4 +413,8 @@ function generateUniquePeerId(genFn: () => string, used: Set<string>): string {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
+}
+
+function encodeDocId(docId: string): string {
+  return encodeURIComponent(docId);
 }

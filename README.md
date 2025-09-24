@@ -19,6 +19,7 @@ import { acquirePeerId } from "@loro-dev/peer-lease";
 const doc = new LoroDoc();
 // ... Import local data into doc first
 const lease = await acquirePeerId(
+  "doc-123",
   () => new LoroDoc().peerIdStr,
   JSON.stringify(doc.frontiers()),
   (a, b) => {
@@ -38,6 +39,8 @@ try {
   // Note: release can be invoked exactly once; a second call throws.
 }
 ```
+
+The first argument is the document identifier that scopes locking and cache entries, ensuring leases only coordinate with peers working on the same document.
 
 `acquirePeerId` first tries to coordinate through the [Web Locks API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API). When that API is unavailable it falls back to a localStorage-backed mutex with a TTL, heartbeat refresh, and release notifications. A released ID is cached together with the document version that produced it and is only handed out when the caller proves their version has advanced, preventing stale edits from reusing a peer ID.
 
