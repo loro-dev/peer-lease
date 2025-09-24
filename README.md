@@ -50,6 +50,36 @@ The first argument is the document identifier that scopes locking and cache entr
 - **Version gating** – Every lease carries document metadata. We only recycle a peer ID after the releasing tab supplies the version it used, and a future caller provides a strictly newer version according to the supplied comparator. This stops pre-load editing sessions from replaying IDs once the real document snapshot arrives.
 - **Explicit release** – A lease is only recycled when the releasing tab provides its final version metadata. If a tab crashes or never releases, the ID stays reserved so it cannot be handed out again accidentally; any lease left active for 24 hours is simply discarded instead of being returned to the available pool.
 
+### Lock implementation details
+
+When Web Locks are available the mutex is just a thin wrapper around `navigator.locks.request`, enforcing an acquire timeout. In browsers without that API we fall back to a localStorage-backed mutex that writes a JSON record containing a token, fence, and expiry. The holder extends the expiry with a heartbeat (a `setInterval` that calls `refresh`) so long tasks don’t lose the lock, while waiters observe the fence value and `storage`/`BroadcastChannel` notifications to wake up promptly. If the tab crashes the record expires after `lockTtlMs`, letting another peer take over without manual cleanup.
+
+The mutex implementation is exported so advanced users can coordinate other shared state:
+
+```ts
+import { createMutex, type AsyncMutex } from "@loro-dev/peer-lease";
+
+const mutex: AsyncMutex = createMutex({
+  storage: window.localStorage,
+  lockKey: "my-lock",
+  fenceKey: "my-lock:fence",
+  channelName: "my-lock:channel",
+  webLockName: "my-lock:web",
+  options: {
+    lockTtlMs: 10_000,
+    acquireTimeoutMs: 5_000,
+    retryDelayMs: 40,
+    retryJitterMs: 60,
+  },
+});
+
+await mutex.runExclusive(async () => {
+  // critical section
+});
+```
+
+You can reuse the same mutex that `acquirePeerId` does by passing the document id to keep coordination scoped per document.
+
 ## Development
 
 - `pnpm install` – install dependencies
