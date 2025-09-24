@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/loro-dev/peer-lease/compare/v2.0.0...v2.0.1) (2025-09-24)
+
+
+### Miscellaneous Chores
+
+* trigger release ([f1ad0e5](https://github.com/loro-dev/peer-lease/commit/f1ad0e585f10689da6b7996752bc52d3f52f82a2))
+
 ## [2.0.0](https://github.com/loro-dev/peer-lease/compare/v1.0.0...v2.0.0) (2025-09-24)
 
 
