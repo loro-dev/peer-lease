@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.0.0](https://github.com/loro-dev/peer-lease/compare/v1.0.0...v2.0.0) (2025-09-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* add docId as an arg
+
+### Features
+
+* add docId as an arg ([d96aab2](https://github.com/loro-dev/peer-lease/commit/d96aab2341c356c621bf651cff5068fc18f01739))
+* expose createMutex ([cc5ffc2](https://github.com/loro-dev/peer-lease/commit/cc5ffc236f2257333aa51c7130316b8590ed6ff0))
+* tryReuseLoroPeerId ([a7de7e5](https://github.com/loro-dev/peer-lease/commit/a7de7e5379b747a7b11f730b73158a55e0b4cd81))
+
 ## [1.0.0](https://github.com/loro-dev/peer-lease/compare/v1.0.0...v1.0.0) (2025-09-24)
 
 
