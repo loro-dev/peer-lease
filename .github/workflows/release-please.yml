@@ -27,7 +27,7 @@ jobs:
 
   publish:
     needs: release
-    if: ${{ needs.release.outputs.releases_created == 'true' }}
+    if: ${{ needs.version.outputs.release_created }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
