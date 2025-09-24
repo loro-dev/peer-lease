@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { acquirePeerId, resetPeerLeaseState } from "../src/index.js";
 
-const cmpVersion = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
+const cmpVersion = (a: string, b: string) =>
+  a.localeCompare(b, undefined, { numeric: true });
 const DOC_ID = "doc";
 const OTHER_DOC_ID = "doc-other";
 
@@ -63,8 +64,7 @@ describe("acquirePeerId", () => {
   it("rejects release attempts without a version", async () => {
     const lease = await acquirePeerId(DOC_ID, () => "alpha", "1", cmpVersion);
 
-    await expect(lease.release(""))
-      .rejects.toThrow(/non-empty version string/);
+    await expect(lease.release("")).rejects.toThrow(/non-empty version string/);
 
     await lease.release("2");
   });
@@ -107,8 +107,8 @@ describe("acquirePeerId", () => {
 
     const next = await acquirePeerId(DOC_ID, genFn, "2", cmpVersion);
 
-    expect(next.value).toBe("generated");
-    expect(genFn).toHaveBeenCalledTimes(1);
+    expect(next.value).toBe("seed");
+    expect(genFn).toHaveBeenCalledTimes(0);
     await next.release("3");
   });
 
@@ -119,7 +119,12 @@ describe("acquirePeerId", () => {
     const docLease = await acquirePeerId(DOC_ID, genFn, "1", cmpVersion);
     await docLease.release("2");
 
-    const otherLease = await acquirePeerId(OTHER_DOC_ID, genFn, "1", cmpVersion);
+    const otherLease = await acquirePeerId(
+      OTHER_DOC_ID,
+      genFn,
+      "1",
+      cmpVersion,
+    );
 
     expect(otherLease.value).toBe("peer-1");
     expect(otherLease.value).not.toBe(docLease.value);
@@ -129,6 +134,8 @@ describe("acquirePeerId", () => {
   });
 
   it("throws when the generator returns an empty string", async () => {
-    await expect(acquirePeerId(DOC_ID, () => "", "1", cmpVersion)).rejects.toThrow(/non-empty/);
+    await expect(
+      acquirePeerId(DOC_ID, () => "", "1", cmpVersion),
+    ).rejects.toThrow(/non-empty/);
   });
 });

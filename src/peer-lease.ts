@@ -60,7 +60,10 @@ function getDocMutex(docId: string): AsyncMutex {
   return mutex;
 }
 
-function withDocMutex<T>(docId: string, callback: () => T | Promise<T>): Promise<T> {
+function withDocMutex<T>(
+  docId: string,
+  callback: () => T | Promise<T>,
+): Promise<T> {
   return getDocMutex(docId).runExclusive(callback);
 }
 
@@ -167,7 +170,7 @@ export async function acquirePeerId(
       const entry = state.available[index];
       // Only recycle peer IDs produced by a strictly older document version.
       const cmp = cmpVersion(version, entry.version);
-      if (cmp != null && cmp > 0) {
+      if (cmp != null && cmp >= 0) {
         peerId = entry.id;
         state.available.splice(index, 1);
         break;

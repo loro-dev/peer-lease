@@ -14,7 +14,7 @@ npm install @loro-dev/peer-lease
 
 ```ts
 import { LoroDoc } from "loro-crdt";
-import { acquirePeerId } from "@loro-dev/peer-lease";
+import { acquirePeerId, tryReuseLoroPeerId } from "@loro-dev/peer-lease";
 
 const doc = new LoroDoc();
 // ... Import local data into doc first
@@ -38,11 +38,21 @@ try {
   // Or use FinalizeRegistry to release the lease
   // Note: release can be invoked exactly once; a second call throws.
 }
+
+// Later, when you reopen the same document, try to reuse the cached peer id
+const release = await tryReuseLoroPeerId("doc-123", doc);
+try {
+  // doc.peerIdStr now matches the previously leased id when the cache is still valid
+} finally {
+  release();
+}
 ```
 
 The first argument is the document identifier that scopes locking and cache entries, ensuring leases only coordinate with peers working on the same document.
 
 `acquirePeerId` first tries to coordinate through the [Web Locks API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API). When that API is unavailable it falls back to a localStorage-backed mutex with a TTL, heartbeat refresh, and release notifications. A released ID is cached together with the document version that produced it and is only handed out when the caller proves their version has advanced, preventing stale edits from reusing a peer ID.
+
+`tryReuseLoroPeerId(docId, doc)` wraps the caching flow so you can reopen a document and automatically load the most recent peer ID if the stored frontiers prove the local state is up to date. The returned release function must be called once the session ends; it updates the cache with the latest frontiers and assigns a fresh random peer ID to avoid conflicts on future loads.
 
 ## Coordination strategy
 
