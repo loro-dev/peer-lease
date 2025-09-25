@@ -42,6 +42,18 @@ describe("acquirePeerId", () => {
     await secondLease.release("4");
   });
 
+  it("stages a release synchronously for immediate reuse", async () => {
+    const lease = await acquirePeerId(DOC_ID, () => "sync-peer", "1", cmpVersion);
+
+    const releaseTask = lease.release("2");
+    expect(lease.isReleased()).toBe(true);
+
+    const next = await acquirePeerId(DOC_ID, () => "fresh", "3", cmpVersion);
+
+    expect(next.value).toBe("sync-peer");
+    await Promise.all([releaseTask, next.release("4")]);
+  });
+
   it("does not reuse an active peer ID", async () => {
     let counter = 0;
     const genFn = () => `peer-${counter++}`;
@@ -54,11 +66,15 @@ describe("acquirePeerId", () => {
     await Promise.all([firstLease.release("12"), secondLease.release("13")]);
   });
 
-  it("throws when release is called more than once", async () => {
+  it("returns the same promise when release is called more than once", async () => {
     const lease = await acquirePeerId(DOC_ID, () => "stable", "1", cmpVersion);
 
-    await lease.release("2");
-    await expect(lease.release("2")).rejects.toThrow(/only be called once/);
+    const first = lease.release("2");
+    const second = lease.release("2");
+
+    await expect(first).resolves.toBeUndefined();
+    await expect(second).resolves.toBeUndefined();
+    await expect(lease.release("2")).resolves.toBeUndefined();
   });
 
   it("rejects release attempts without a version", async () => {

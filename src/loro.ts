@@ -1,5 +1,5 @@
 import type { LoroDoc, Frontiers, PeerID } from "loro-crdt";
-import { acquirePeerId } from "./peer-lease.js";
+import { acquirePeerId, PeerIdLease } from "./peer-lease.js";
 
 /**
  * Try to reuse a previous cached peer id for the given loro doc. This method may or may not assign a new PeerId.
@@ -14,10 +14,16 @@ import { acquirePeerId } from "./peer-lease.js";
  * @returns releaseFn: a function that releases the peer id lease.
  * After releasing, doc will be assigned a new random peer id to avoid conflicts
  */
+export type LoroPeerIdReleaseHandle = ((frontiers?: Frontiers | string) => Promise<void>) & {
+  release: (frontiers?: Frontiers | string) => Promise<void>;
+  isReleased: () => boolean;
+  value: PeerID;
+};
+
 export async function tryReuseLoroPeerId(
   docId: string,
   doc: LoroDoc,
-): Promise<() => void> {
+): Promise<LoroPeerIdReleaseHandle> {
   if (!isNonEmptyString(docId)) {
     throw new TypeError("tryReuseLoroPeerId expects a non-empty docId string");
   }
@@ -48,10 +54,49 @@ export async function tryReuseLoroPeerId(
 
   doc.setPeerId(lease.value as PeerID);
 
-  return async () => {
-    doc.setPeerId(randomU64());
-    await lease.release(encodeFrontiers(doc.frontiers()));
+  return createReleaseHandle(doc, lease);
+}
+
+function createReleaseHandle(doc: LoroDoc, lease: PeerIdLease): LoroPeerIdReleaseHandle {
+  let reassigned = false;
+
+  const finalizeDocPeer = (): void => {
+    if (!reassigned) {
+      doc.setPeerId(randomU64());
+      reassigned = true;
+    }
   };
+
+  const releaseAsync = (frontiers?: Frontiers | string): Promise<void> => {
+    finalizeDocPeer();
+    const version = encodeFrontiersInput(doc, frontiers);
+    return lease.release(version);
+  };
+
+  const handle = (async (frontiers?: Frontiers | string) => {
+    await releaseAsync(frontiers);
+  }) as LoroPeerIdReleaseHandle;
+
+  handle.release = releaseAsync;
+  handle.isReleased = () => lease.isReleased();
+  handle.value = lease.value as PeerID;
+
+  return handle;
+}
+
+function encodeFrontiersInput(
+  doc: LoroDoc,
+  frontiers?: Frontiers | string,
+): string {
+  if (typeof frontiers === "string") {
+    return frontiers;
+  }
+
+  if (Array.isArray(frontiers)) {
+    return encodeFrontiers(frontiers);
+  }
+
+  return encodeFrontiers(doc.frontiers());
 }
 
 function randomU64(): PeerID {
