@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import type { LoroDoc } from "loro-crdt";
 import { attachPeerLeaseLifecycle } from "../src/index.js";
+import type { LoroPeerIdReleaseHandle } from "../src/index.js";
 
 interface ListenerEntry {
   type: string;
@@ -28,19 +30,21 @@ function createEventTarget() {
   };
 }
 
-function createReleaseHandle() {
+type VitestMock = ReturnType<typeof vi.fn>;
+
+function createReleaseHandle(): LoroPeerIdReleaseHandle {
   let released = false;
   const fn = vi.fn(async () => {
     released = true;
   });
 
-  const handle = Object.assign(fn, {
-    release: vi.fn(async () => {
-      released = true;
-    }),
-    isReleased: () => released,
-    value: "peer" as const
-  });
+  const handle = fn as unknown as LoroPeerIdReleaseHandle;
+
+  handle.release = vi.fn(async () => {
+    released = true;
+  }) as LoroPeerIdReleaseHandle["release"];
+  handle.isReleased = () => released;
+  handle.value = "1" as LoroPeerIdReleaseHandle["value"];
 
   return handle;
 }
@@ -49,14 +53,20 @@ describe("attachPeerLeaseLifecycle", () => {
   it("releases synchronously on pagehide and resumes on pageshow", async () => {
     const target = createEventTarget();
     const release = createReleaseHandle();
+    const releaseMock = release as unknown as VitestMock;
     const onResume = vi.fn();
 
-    const stubDoc = {
-      frontiers: () => [{ peer: "peer", counter: 1 }]
-    } as const;
+    const frontiers: ReturnType<LoroDoc["frontiers"]> = [
+      { peer: "1" as `${number}`, counter: 1 },
+    ];
+    const stubDoc: Pick<LoroDoc, "frontiers"> = {
+      frontiers: () => frontiers,
+    };
 
     const originalDocument = globalThis.document;
-    (globalThis as { document?: { visibilityState?: string } }).document = { visibilityState: "visible" };
+    (globalThis as unknown as { document?: { visibilityState?: string } }).document = {
+      visibilityState: "visible",
+    };
 
     const detach = attachPeerLeaseLifecycle({
       release,
@@ -72,8 +82,8 @@ describe("attachPeerLeaseLifecycle", () => {
     target.emit("visibilitychange");
 
     target.emit("pagehide");
-    expect(release).toHaveBeenCalledTimes(1);
-    expect(release.mock.calls[0][0]).toBe(JSON.stringify(stubDoc.frontiers()));
+    expect(releaseMock).toHaveBeenCalledTimes(1);
+    expect(releaseMock.mock.calls[0][0]).toBe(JSON.stringify(stubDoc.frontiers()));
 
     target.emit("pageshow");
     expect(onResume).toHaveBeenCalledTimes(1);
@@ -81,12 +91,12 @@ describe("attachPeerLeaseLifecycle", () => {
     detach();
 
     target.emit("pagehide");
-    expect(release).toHaveBeenCalledTimes(1);
+    expect(releaseMock).toHaveBeenCalledTimes(1);
 
     if (originalDocument) {
-      (globalThis as { document?: typeof originalDocument }).document = originalDocument;
+      (globalThis as unknown as { document?: typeof originalDocument }).document = originalDocument;
     } else {
-      delete (globalThis as { document?: unknown }).document;
+      delete (globalThis as unknown as { document?: unknown }).document;
     }
   });
 
@@ -98,14 +108,7 @@ describe("attachPeerLeaseLifecycle", () => {
     const docRemove = vi.fn();
 
     const originalDocument = globalThis.document;
-    const originalGlobalAdd = (globalThis as {
-      addEventListener?: typeof globalAdd;
-    }).addEventListener;
-    const originalGlobalRemove = (globalThis as {
-      removeEventListener?: typeof globalRemove;
-    }).removeEventListener;
-
-    (globalThis as {
+    const globalOverride = globalThis as unknown as {
       addEventListener?: typeof globalAdd;
       removeEventListener?: typeof globalRemove;
       document?: {
@@ -113,34 +116,27 @@ describe("attachPeerLeaseLifecycle", () => {
         removeEventListener: typeof docRemove;
         visibilityState: string;
       };
-    }).addEventListener = globalAdd;
+    };
+    const originalGlobalAdd = globalOverride.addEventListener;
+    const originalGlobalRemove = globalOverride.removeEventListener;
 
-    (globalThis as {
-      addEventListener?: typeof globalAdd;
-      removeEventListener?: typeof globalRemove;
-      document?: {
-        addEventListener: typeof docAdd;
-        removeEventListener: typeof docRemove;
-        visibilityState: string;
-      };
-    }).removeEventListener = globalRemove;
+    globalOverride.addEventListener = globalAdd;
+    globalOverride.removeEventListener = globalRemove;
 
-    (globalThis as {
-      document?: {
-        addEventListener: typeof docAdd;
-        removeEventListener: typeof docRemove;
-        visibilityState: string;
-      };
-    }).document = {
+    globalOverride.document = {
       addEventListener: docAdd,
       removeEventListener: docRemove,
       visibilityState: "visible",
     };
 
     try {
+      const emptyFrontiers: ReturnType<LoroDoc["frontiers"]> = [];
+
       const detach = attachPeerLeaseLifecycle({
         release,
-        doc: { frontiers: () => [] },
+        doc: {
+          frontiers: () => emptyFrontiers,
+        },
       });
 
       expect(globalAdd).toHaveBeenCalledWith("pagehide", expect.any(Function));
@@ -152,23 +148,21 @@ describe("attachPeerLeaseLifecycle", () => {
       expect(docRemove).toHaveBeenCalledWith("visibilitychange", expect.any(Function));
     } finally {
       if (originalGlobalAdd) {
-        (globalThis as { addEventListener?: typeof globalAdd }).addEventListener =
-          originalGlobalAdd;
+        globalOverride.addEventListener = originalGlobalAdd;
       } else {
-        delete (globalThis as { addEventListener?: typeof globalAdd }).addEventListener;
+        delete globalOverride.addEventListener;
       }
 
       if (originalGlobalRemove) {
-        (globalThis as { removeEventListener?: typeof globalRemove }).removeEventListener =
-          originalGlobalRemove;
+        globalOverride.removeEventListener = originalGlobalRemove;
       } else {
-        delete (globalThis as { removeEventListener?: typeof globalRemove }).removeEventListener;
+        delete globalOverride.removeEventListener;
       }
 
       if (originalDocument) {
-        (globalThis as { document?: typeof originalDocument }).document = originalDocument;
+        (globalThis as unknown as { document?: typeof originalDocument }).document = originalDocument;
       } else {
-        delete (globalThis as { document?: unknown }).document;
+        delete (globalThis as unknown as { document?: unknown }).document;
       }
     }
   });
