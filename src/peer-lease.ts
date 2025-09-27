@@ -104,8 +104,8 @@ function getWebLockName(docId: string): string {
  * finishes emitting operations for the given document version.
  */
 interface ReleaseHandlers {
-  stageRelease(value: string, version: string): void;
-  flushRelease(value: string, version: string): Promise<void>;
+  stageRelease: (value: string, version: string) => void;
+  flushRelease: (value: string, version: string) => Promise<void>;
 }
 
 export class PeerIdLease {
@@ -265,7 +265,7 @@ export async function resetPeerLeaseState(docId?: string): Promise<void> {
 
 function createReleaseHandlers(docId: string): ReleaseHandlers {
   return {
-    stageRelease(value: string, version: string): void {
+    stageRelease: (value: string, version: string) => {
       if (!isNonEmptyString(value) || !isNonEmptyString(version)) {
         return;
       }
@@ -273,7 +273,7 @@ function createReleaseHandlers(docId: string): ReleaseHandlers {
       stagePendingRelease(docId, { id: value, version });
     },
 
-    async flushRelease(value: string, version: string): Promise<void> {
+    flushRelease: async (value: string, version: string) => {
       if (!isNonEmptyString(value) || !isNonEmptyString(version)) {
         return;
       }
@@ -290,7 +290,7 @@ function createReleaseHandlers(docId: string): ReleaseHandlers {
           state.available.push({ id: value, version });
         }
       });
-    }
+    },
   };
 }
 

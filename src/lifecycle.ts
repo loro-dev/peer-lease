@@ -58,7 +58,7 @@ export function attachPeerLeaseLifecycle(options: PeerLeaseLifecycleOptions): ()
     invokeRelease(release, version);
 
     if (event.persisted && options.onFreeze) {
-      options.onFreeze(event);
+      void options.onFreeze(event);
     }
   };
 
@@ -66,7 +66,7 @@ export function attachPeerLeaseLifecycle(options: PeerLeaseLifecycleOptions): ()
     stagedVersion = undefined;
 
     if (release.isReleased() && options.onResume) {
-      options.onResume(event);
+      void options.onResume(event);
     }
   };
 
