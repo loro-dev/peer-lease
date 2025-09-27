@@ -8,14 +8,17 @@ describe("tryReuseLoroPeerId", () => {
     let id: string = "";
     {
       const doc = new LoroDoc();
-      const ret = await tryReuseLoroPeerId(DOC_ID, doc);
+      const release = await tryReuseLoroPeerId(DOC_ID, doc);
       id = doc.peerIdStr;
-      ret();
+      await release();
     }
     {
       const doc = new LoroDoc();
-      await tryReuseLoroPeerId(DOC_ID, doc);
+      const release = await tryReuseLoroPeerId(DOC_ID, doc);
       expect(doc.peerIdStr).toBe(id);
+      const releaseTask = release();
+      expect(release.isReleased()).toBe(true);
+      await releaseTask;
     }
   });
 });

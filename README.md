@@ -44,7 +44,7 @@ const release = await tryReuseLoroPeerId("doc-123", doc);
 try {
   // doc.peerIdStr now matches the previously leased id when the cache is still valid
 } finally {
-  release();
+  await release();
 }
 ```
 
@@ -52,7 +52,42 @@ The first argument is the document identifier that scopes locking and cache entr
 
 `acquirePeerId` first tries to coordinate through the [Web Locks API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API). When that API is unavailable it falls back to a localStorage-backed mutex with a TTL, heartbeat refresh, and release notifications. A released ID is cached together with the document version that produced it and is only handed out when the caller proves their version has advanced, preventing stale edits from reusing a peer ID.
 
-`tryReuseLoroPeerId(docId, doc)` wraps the caching flow so you can reopen a document and automatically load the most recent peer ID if the stored frontiers prove the local state is up to date. The returned release function must be called once the session ends; it updates the cache with the latest frontiers and assigns a fresh random peer ID to avoid conflicts on future loads.
+`tryReuseLoroPeerId(docId, doc)` wraps the caching flow so you can reopen a document and automatically load the most recent peer ID if the stored frontiers prove the local state is up to date. The returned release handle is callable (`await release()`) and is also safe to invoke in synchronous lifecycle handlers—`release()` stages the result synchronously and finishes the mutex flush in the background:
+
+```ts
+window.addEventListener("pagehide", () => {
+  // Only synchronous work is allowed here; release() stages the data right away.
+  release(JSON.stringify(doc.frontiers()));
+});
+
+window.addEventListener("pageshow", () => {
+  if (!release.isReleased()) {
+    return;
+  }
+  // Optionally restart peer work if the page returned from BFCache.
+});
+```
+
+`release()` writes the lease outcome to synchronous storage before returning, so browsers terminating the page (e.g. during `pagehide` on mobile) still mark the peer ID available even if the returned promise never resolves. If the page survives the lifecycle event, you can still `await release()` later; repeated calls reuse the same promise and do not restage.
+
+To wire these lifecycle hooks without repeating boilerplate, use the helper exported as `attachPeerLeaseLifecycle`:
+
+```ts
+import { attachPeerLeaseLifecycle } from "@loro-dev/peer-lease";
+
+const detachLifecycle = attachPeerLeaseLifecycle({
+  release,
+  doc,
+  onResume: async () => {
+    // Re-acquire a lease or restart transports when the tab resumes from BFCache.
+  }
+});
+
+// Later, when tearing down the document entirely
+detachLifecycle();
+```
+
+The helper stages the latest frontiers while the page is visible, calls `release()` during `pagehide`, and invokes `onResume` after `pageshow` if the handle was released. Provide an `onFreeze` callback if you need to pause background work when a BFCache transition is detected.
 
 ## Coordination strategy
 
