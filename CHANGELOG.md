@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/loro-dev/peer-lease/compare/v2.0.1...v2.0.2) (2025-09-27)
+
+
+### Bug Fixes
+
+* provide better methods for handling document page unload ([#9](https://github.com/loro-dev/peer-lease/issues/9)) ([51b502b](https://github.com/loro-dev/peer-lease/commit/51b502b7ad39d4e26e514f15efb26a32c1a0d65e))
+
 ## [2.0.1](https://github.com/loro-dev/peer-lease/compare/v2.0.0...v2.0.1) (2025-09-24)
 
 
