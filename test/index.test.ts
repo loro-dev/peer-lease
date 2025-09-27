@@ -77,6 +77,44 @@ describe("acquirePeerId", () => {
     await expect(lease.release("2")).resolves.toBeUndefined();
   });
 
+  it("keeps staged releases when the flush fails", async () => {
+    const lease = await acquirePeerId(DOC_ID, () => "flaky", "1", cmpVersion);
+
+    const internals = lease as unknown as {
+      flushReleaseFn: (value: string, version: string) => Promise<void>;
+    };
+    const originalFlush = internals.flushReleaseFn;
+    let shouldFail = true;
+
+    internals.flushReleaseFn = async (value, version) => {
+      if (shouldFail) {
+        shouldFail = false;
+        throw new Error("flush failure");
+      }
+      return originalFlush(value, version);
+    };
+
+    try {
+      let caught: unknown;
+      try {
+        await lease.release("2");
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).message).toMatch(/flush failure/);
+      expect(lease.isReleased()).toBe(false);
+
+      const next = await acquirePeerId(DOC_ID, () => "other", "3", cmpVersion);
+      expect(next.value).toBe("flaky");
+
+      await Promise.all([next.release("4"), lease.release("5")]);
+    } finally {
+      internals.flushReleaseFn = originalFlush;
+    }
+  });
+
   it("rejects release attempts without a version", async () => {
     const lease = await acquirePeerId(DOC_ID, () => "alpha", "1", cmpVersion);
 

@@ -89,4 +89,87 @@ describe("attachPeerLeaseLifecycle", () => {
       delete (globalThis as { document?: unknown }).document;
     }
   });
+
+  it("attaches visibility listeners to document by default", () => {
+    const release = createReleaseHandle();
+    const globalAdd = vi.fn();
+    const globalRemove = vi.fn();
+    const docAdd = vi.fn();
+    const docRemove = vi.fn();
+
+    const originalDocument = globalThis.document;
+    const originalGlobalAdd = (globalThis as {
+      addEventListener?: typeof globalAdd;
+    }).addEventListener;
+    const originalGlobalRemove = (globalThis as {
+      removeEventListener?: typeof globalRemove;
+    }).removeEventListener;
+
+    (globalThis as {
+      addEventListener?: typeof globalAdd;
+      removeEventListener?: typeof globalRemove;
+      document?: {
+        addEventListener: typeof docAdd;
+        removeEventListener: typeof docRemove;
+        visibilityState: string;
+      };
+    }).addEventListener = globalAdd;
+
+    (globalThis as {
+      addEventListener?: typeof globalAdd;
+      removeEventListener?: typeof globalRemove;
+      document?: {
+        addEventListener: typeof docAdd;
+        removeEventListener: typeof docRemove;
+        visibilityState: string;
+      };
+    }).removeEventListener = globalRemove;
+
+    (globalThis as {
+      document?: {
+        addEventListener: typeof docAdd;
+        removeEventListener: typeof docRemove;
+        visibilityState: string;
+      };
+    }).document = {
+      addEventListener: docAdd,
+      removeEventListener: docRemove,
+      visibilityState: "visible",
+    };
+
+    try {
+      const detach = attachPeerLeaseLifecycle({
+        release,
+        doc: { frontiers: () => [] },
+      });
+
+      expect(globalAdd).toHaveBeenCalledWith("pagehide", expect.any(Function));
+      expect(globalAdd).toHaveBeenCalledWith("pageshow", expect.any(Function));
+      expect(docAdd).toHaveBeenCalledWith("visibilitychange", expect.any(Function));
+
+      detach();
+
+      expect(docRemove).toHaveBeenCalledWith("visibilitychange", expect.any(Function));
+    } finally {
+      if (originalGlobalAdd) {
+        (globalThis as { addEventListener?: typeof globalAdd }).addEventListener =
+          originalGlobalAdd;
+      } else {
+        delete (globalThis as { addEventListener?: typeof globalAdd }).addEventListener;
+      }
+
+      if (originalGlobalRemove) {
+        (globalThis as { removeEventListener?: typeof globalRemove }).removeEventListener =
+          originalGlobalRemove;
+      } else {
+        delete (globalThis as { removeEventListener?: typeof globalRemove }).removeEventListener;
+      }
+
+      if (originalDocument) {
+        (globalThis as { document?: typeof originalDocument }).document = originalDocument;
+      } else {
+        delete (globalThis as { document?: unknown }).document;
+      }
+    }
+  });
 });

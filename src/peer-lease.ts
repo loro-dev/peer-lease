@@ -37,6 +37,11 @@ interface LeaseState {
 
 type PendingReleaseEntry = CachedPeerId;
 
+interface PendingDrainResult {
+  snapshot: string | null;
+  entries: PendingReleaseEntry[];
+}
+
 const storage: StorageLike = createLeaseStorage();
 const mutexes = new Map<string, AsyncMutex>();
 const MUTEX_OPTIONS = {
@@ -295,11 +300,12 @@ async function withState<T>(
 ): Promise<T> {
   return withDocMutex(docId, async () => {
     const state = readState(docId);
-    drainPendingReleases(docId, state);
+    const pending = drainPendingReleases(docId, state);
     cleanupState(state, Date.now());
     const result = await mutator(state);
     normalizeState(state);
     writeState(docId, state);
+    finalizePendingReleases(docId, pending);
     return result;
   });
 }
@@ -371,7 +377,7 @@ function writeState(docId: string, state: LeaseState): void {
 }
 
 function stagePendingRelease(docId: string, entry: PendingReleaseEntry): void {
-  const pending = readPendingReleases(docId);
+  const { entries: pending } = readPendingReleases(docId);
   const dedup = new Map<string, string>();
 
   for (const item of pending) {
@@ -393,8 +399,94 @@ function stagePendingRelease(docId: string, entry: PendingReleaseEntry): void {
   );
 }
 
-function readPendingReleases(docId: string): PendingReleaseEntry[] {
+function readPendingReleases(docId: string): { raw: string | null; entries: PendingReleaseEntry[] } {
   const raw = storage.getItem(getPendingKey(docId));
+  return { raw, entries: parsePendingEntries(raw) };
+}
+
+function writePendingReleases(docId: string, entries: PendingReleaseEntry[]): void {
+  if (entries.length === 0) {
+    storage.removeItem(getPendingKey(docId));
+    return;
+  }
+
+  storage.setItem(getPendingKey(docId), JSON.stringify(entries));
+}
+
+function drainPendingReleases(docId: string, state: LeaseState): PendingDrainResult {
+  const { raw, entries } = readPendingReleases(docId);
+  if (entries.length === 0) {
+    return { snapshot: raw, entries: [] };
+  }
+
+  const dedup = new Map<string, string>();
+  for (const entry of entries) {
+    if (!entry) {
+      continue;
+    }
+
+    if (isNonEmptyString(entry.id) && isNonEmptyString(entry.version)) {
+      dedup.set(entry.id, entry.version);
+    }
+  }
+
+  for (const [id, version] of dedup.entries()) {
+    if (state.active[id] !== undefined) {
+      delete state.active[id];
+    }
+
+    const existingIndex = state.available.findIndex((entry) => entry.id === id);
+    if (existingIndex >= 0) {
+      state.available.splice(existingIndex, 1);
+    }
+
+    state.available.push({ id, version });
+  }
+
+  return {
+    snapshot: raw,
+    entries: Array.from(dedup.entries()).map(([id, version]) => ({ id, version })),
+  };
+}
+
+function finalizePendingReleases(docId: string, pending: PendingDrainResult): void {
+  if (pending.entries.length === 0) {
+    return;
+  }
+
+  const key = getPendingKey(docId);
+  const currentRaw = storage.getItem(key);
+
+  if (currentRaw === null) {
+    return;
+  }
+
+  if (pending.snapshot !== null && currentRaw === pending.snapshot) {
+    storage.removeItem(key);
+    return;
+  }
+
+  const remaining = parsePendingEntries(currentRaw);
+  let changed = false;
+
+  for (const entry of pending.entries) {
+    const index = remaining.findIndex(
+      (candidate) => candidate.id === entry.id && candidate.version === entry.version,
+    );
+    if (index >= 0) {
+      remaining.splice(index, 1);
+      changed = true;
+    }
+  }
+
+  if (!changed) {
+    return;
+  }
+
+  writePendingReleases(docId, remaining);
+}
+
+function parsePendingEntries(raw: string | null): PendingReleaseEntry[] {
   if (!raw) {
     return [];
   }
@@ -421,53 +513,6 @@ function readPendingReleases(docId: string): PendingReleaseEntry[] {
   } catch {
     return [];
   }
-}
-
-function writePendingReleases(docId: string, entries: PendingReleaseEntry[]): void {
-  if (entries.length === 0) {
-    storage.removeItem(getPendingKey(docId));
-    return;
-  }
-
-  storage.setItem(getPendingKey(docId), JSON.stringify(entries));
-}
-
-function drainPendingReleases(docId: string, state: LeaseState): void {
-  const pending = readPendingReleases(docId);
-  if (pending.length === 0) {
-    return;
-  }
-
-  const dedup = new Map<string, string>();
-  for (const entry of pending) {
-    if (!entry) {
-      continue;
-    }
-
-    if (isNonEmptyString(entry.id) && isNonEmptyString(entry.version)) {
-      dedup.set(entry.id, entry.version);
-    }
-  }
-
-  if (dedup.size === 0) {
-    storage.removeItem(getPendingKey(docId));
-    return;
-  }
-
-  for (const [id, version] of dedup.entries()) {
-    if (state.active[id] !== undefined) {
-      delete state.active[id];
-    }
-
-    const existingIndex = state.available.findIndex((entry) => entry.id === id);
-    if (existingIndex >= 0) {
-      state.available.splice(existingIndex, 1);
-    }
-
-    state.available.push({ id, version });
-  }
-
-  storage.removeItem(getPendingKey(docId));
 }
 
 function cleanupState(state: LeaseState, now: number): void {

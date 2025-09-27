@@ -11,6 +11,10 @@ interface PageTransitionEventLike {
   persisted?: boolean;
 }
 
+interface DocumentLike extends LifecycleEventTarget {
+  visibilityState?: string;
+}
+
 export interface PeerLeaseLifecycleOptions {
   release: LoroPeerIdReleaseHandle;
   doc: Pick<LoroDoc, "frontiers">;
@@ -26,8 +30,10 @@ export function attachPeerLeaseLifecycle(options: PeerLeaseLifecycleOptions): ()
     throw new TypeError("attachPeerLeaseLifecycle requires a release handle function");
   }
 
-  const target = options.target ?? getDefaultLifecycleTarget();
-  if (!target) {
+  const pageTarget = options.target ?? getDefaultLifecycleTarget();
+  const visibilityTarget = options.target ?? getDefaultVisibilityTarget();
+
+  if (!pageTarget && !visibilityTarget) {
     return () => {
       /* no-op */
     };
@@ -72,14 +78,34 @@ export function attachPeerLeaseLifecycle(options: PeerLeaseLifecycleOptions): ()
     stageFrontiers();
   };
 
-  target.addEventListener("pagehide", handlePageHide);
-  target.addEventListener("pageshow", handlePageShow);
-  target.addEventListener("visibilitychange", handleVisibilityChange as (event: PageTransitionEventLike) => void);
+  const detachFns: Array<() => void> = [];
+
+  if (pageTarget) {
+    pageTarget.addEventListener("pagehide", handlePageHide);
+    pageTarget.addEventListener("pageshow", handlePageShow);
+    detachFns.push(() => {
+      pageTarget.removeEventListener("pagehide", handlePageHide);
+      pageTarget.removeEventListener("pageshow", handlePageShow);
+    });
+  }
+
+  if (visibilityTarget) {
+    visibilityTarget.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange as (event: PageTransitionEventLike) => void,
+    );
+    detachFns.push(() => {
+      visibilityTarget.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange as (event: PageTransitionEventLike) => void,
+      );
+    });
+  }
 
   return () => {
-    target.removeEventListener("pagehide", handlePageHide);
-    target.removeEventListener("pageshow", handlePageShow);
-    target.removeEventListener("visibilitychange", handleVisibilityChange as (event: PageTransitionEventLike) => void);
+    for (const detach of detachFns) {
+      detach();
+    }
   };
 }
 
@@ -89,6 +115,18 @@ function getDefaultLifecycleTarget(): LifecycleEventTarget | null {
     return null;
   }
   return candidate as LifecycleEventTarget;
+}
+
+function getDefaultVisibilityTarget(): LifecycleEventTarget | null {
+  const doc = getDocument();
+  if (
+    doc &&
+    typeof doc.addEventListener === "function" &&
+    typeof doc.removeEventListener === "function"
+  ) {
+    return doc;
+  }
+  return getDefaultLifecycleTarget();
 }
 
 function encodeFrontiersInput(frontiers: Frontiers | string): string {
@@ -112,8 +150,8 @@ function invokeRelease(release: LoroPeerIdReleaseHandle, version: string): void 
   }
 }
 
-function getDocument(): { visibilityState?: string } | null {
-  const candidate = (globalThis as { document?: { visibilityState?: string } }).document;
+function getDocument(): DocumentLike | null {
+  const candidate = (globalThis as { document?: DocumentLike }).document;
   if (!candidate) {
     return null;
   }
