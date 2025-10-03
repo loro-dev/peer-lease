@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0](https://github.com/loro-dev/peer-lease/compare/v2.0.2...v3.0.0) (2025-10-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* simplify api & only use a number to release loro doc
+
+### Features
+
+* simplify api & only use a number to release loro doc ([db91779](https://github.com/loro-dev/peer-lease/commit/db91779721063fd282cef31e62363c2d517ecaa8))
+
 ## [2.0.2](https://github.com/loro-dev/peer-lease/compare/v2.0.1...v2.0.2) (2025-09-27)
 
 
