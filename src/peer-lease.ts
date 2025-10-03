@@ -171,7 +171,7 @@ export class PeerIdLease {
 export async function acquirePeerId(
   docId: string,
   genFn: () => string,
-  version: string,
+  getVersion: (peerId: string) => string,
   cmpVersion: (a: string, b: string) => number | undefined,
 ): Promise<PeerIdLease> {
   if (!isNonEmptyString(docId)) {
@@ -182,21 +182,17 @@ export async function acquirePeerId(
     throw new TypeError("acquirePeerId expects a generator function");
   }
 
-  if (!isNonEmptyString(version)) {
-    throw new TypeError("acquirePeerId expects a non-empty version string");
-  }
-
   if (typeof cmpVersion !== "function") {
     throw new TypeError("acquirePeerId expects a comparator function");
   }
 
-  const value = await withState(docId, async (state) => {
+  const value = await withState(docId, (state) => {
     let peerId: string | undefined;
 
     for (let index = 0; index < state.available.length; index += 1) {
       const entry = state.available[index];
       // Only recycle peer IDs produced by a strictly older document version.
-      const cmp = cmpVersion(version, entry.version);
+      const cmp = cmpVersion(getVersion(entry.id), entry.version);
       if (cmp != null && cmp >= 0) {
         peerId = entry.id;
         state.available.splice(index, 1);
@@ -221,7 +217,7 @@ export async function acquirePeerId(
 
     state.active[peerId] = {
       leasedAt: Date.now(),
-      version,
+      version: getVersion(peerId),
     };
     return peerId;
   });

@@ -22,7 +22,7 @@ describe("acquirePeerId", () => {
   });
 
   it("generates a new peer ID when none are cached", async () => {
-    const lease = await acquirePeerId(DOC_ID, () => "peer-1", "1", cmpVersion);
+    const lease = await acquirePeerId(DOC_ID, () => "peer-1", () => "1", cmpVersion);
 
     expect(lease.value).toBe("peer-1");
     await lease.release("2");
@@ -32,10 +32,10 @@ describe("acquirePeerId", () => {
     let counter = 0;
     const genFn = vi.fn(() => `peer-${counter++}`);
 
-    const firstLease = await acquirePeerId(DOC_ID, genFn, "1", cmpVersion);
+    const firstLease = await acquirePeerId(DOC_ID, genFn, () => "1", cmpVersion);
     await firstLease.release("2");
 
-    const secondLease = await acquirePeerId(DOC_ID, genFn, "3", cmpVersion);
+    const secondLease = await acquirePeerId(DOC_ID, genFn, () => "3", cmpVersion);
 
     expect(secondLease.value).toBe(firstLease.value);
     expect(genFn).toHaveBeenCalledTimes(1);
@@ -43,12 +43,12 @@ describe("acquirePeerId", () => {
   });
 
   it("stages a release synchronously for immediate reuse", async () => {
-    const lease = await acquirePeerId(DOC_ID, () => "sync-peer", "1", cmpVersion);
+    const lease = await acquirePeerId(DOC_ID, () => "sync-peer", () => "1", cmpVersion);
 
     const releaseTask = lease.release("2");
     expect(lease.isReleased()).toBe(true);
 
-    const next = await acquirePeerId(DOC_ID, () => "fresh", "3", cmpVersion);
+    const next = await acquirePeerId(DOC_ID, () => "fresh", () => "3", cmpVersion);
 
     expect(next.value).toBe("sync-peer");
     await Promise.all([releaseTask, next.release("4")]);
@@ -58,8 +58,8 @@ describe("acquirePeerId", () => {
     let counter = 0;
     const genFn = () => `peer-${counter++}`;
 
-    const firstLease = await acquirePeerId(DOC_ID, genFn, "10", cmpVersion);
-    const secondLease = await acquirePeerId(DOC_ID, genFn, "11", cmpVersion);
+    const firstLease = await acquirePeerId(DOC_ID, genFn, () => "10", cmpVersion);
+    const secondLease = await acquirePeerId(DOC_ID, genFn, () => "11", cmpVersion);
 
     expect(secondLease.value).not.toBe(firstLease.value);
 
@@ -67,7 +67,7 @@ describe("acquirePeerId", () => {
   });
 
   it("returns the same promise when release is called more than once", async () => {
-    const lease = await acquirePeerId(DOC_ID, () => "stable", "1", cmpVersion);
+    const lease = await acquirePeerId(DOC_ID, () => "stable", () => "1", cmpVersion);
 
     const first = lease.release("2");
     const second = lease.release("2");
@@ -78,7 +78,7 @@ describe("acquirePeerId", () => {
   });
 
   it("keeps staged releases when the flush fails", async () => {
-    const lease = await acquirePeerId(DOC_ID, () => "flaky", "1", cmpVersion);
+    const lease = await acquirePeerId(DOC_ID, () => "flaky", () => "1", cmpVersion);
 
     const internals = lease as unknown as {
       flushReleaseFn: (value: string, version: string) => Promise<void>;
@@ -106,7 +106,7 @@ describe("acquirePeerId", () => {
       expect((caught as Error).message).toMatch(/flush failure/);
       expect(lease.isReleased()).toBe(false);
 
-      const next = await acquirePeerId(DOC_ID, () => "other", "3", cmpVersion);
+      const next = await acquirePeerId(DOC_ID, () => "other", () => "3", cmpVersion);
       expect(next.value).toBe("flaky");
 
       await Promise.all([next.release("4"), lease.release("5")]);
@@ -116,7 +116,7 @@ describe("acquirePeerId", () => {
   });
 
   it("rejects release attempts without a version", async () => {
-    const lease = await acquirePeerId(DOC_ID, () => "alpha", "1", cmpVersion);
+    const lease = await acquirePeerId(DOC_ID, () => "alpha", () => "1", cmpVersion);
 
     await expect(lease.release("")).rejects.toThrow(/non-empty version string/);
 
@@ -127,10 +127,10 @@ describe("acquirePeerId", () => {
     let counter = 0;
     const genFn = vi.fn(() => `peer-${counter++}`);
 
-    const lease = await acquirePeerId(DOC_ID, genFn, "1", () => undefined);
+    const lease = await acquirePeerId(DOC_ID, genFn, () => "1", () => undefined);
     await lease.release("2");
 
-    const next = await acquirePeerId(DOC_ID, genFn, "3", () => undefined);
+    const next = await acquirePeerId(DOC_ID, genFn, () => "3", () => undefined);
 
     expect(next.value).toBe("peer-1");
     expect(genFn).toHaveBeenCalledTimes(2);
@@ -141,12 +141,12 @@ describe("acquirePeerId", () => {
     let counter = 0;
     const genFn = vi.fn(() => `peer-${counter++}`);
 
-    const lease = await acquirePeerId(DOC_ID, genFn, "1", cmpVersion);
+    const lease = await acquirePeerId(DOC_ID, genFn, () => "1", cmpVersion);
     await lease.release("2");
 
     await resetPeerLeaseState(DOC_ID);
 
-    const next = await acquirePeerId(DOC_ID, genFn, "3", cmpVersion);
+    const next = await acquirePeerId(DOC_ID, genFn, () => "3", cmpVersion);
 
     expect(next.value).toBe("peer-1");
     expect(genFn).toHaveBeenCalledTimes(2);
@@ -156,10 +156,10 @@ describe("acquirePeerId", () => {
   it("generates a new ID when the version has not advanced", async () => {
     const genFn = vi.fn(() => "generated");
 
-    const lease = await acquirePeerId(DOC_ID, () => "seed", "1", cmpVersion);
+    const lease = await acquirePeerId(DOC_ID, () => "seed", () => "1", cmpVersion);
     await lease.release("2");
 
-    const next = await acquirePeerId(DOC_ID, genFn, "2", cmpVersion);
+    const next = await acquirePeerId(DOC_ID, genFn, () => "2", cmpVersion);
 
     expect(next.value).toBe("seed");
     expect(genFn).toHaveBeenCalledTimes(0);
@@ -170,13 +170,13 @@ describe("acquirePeerId", () => {
     let counter = 0;
     const genFn = vi.fn(() => `peer-${counter++}`);
 
-    const docLease = await acquirePeerId(DOC_ID, genFn, "1", cmpVersion);
+    const docLease = await acquirePeerId(DOC_ID, genFn, () => "1", cmpVersion);
     await docLease.release("2");
 
     const otherLease = await acquirePeerId(
       OTHER_DOC_ID,
       genFn,
-      "1",
+      () => "1",
       cmpVersion,
     );
 
@@ -189,7 +189,7 @@ describe("acquirePeerId", () => {
 
   it("throws when the generator returns an empty string", async () => {
     await expect(
-      acquirePeerId(DOC_ID, () => "", "1", cmpVersion),
+      acquirePeerId(DOC_ID, () => "", () => "1", cmpVersion),
     ).rejects.toThrow(/non-empty/);
   });
 });

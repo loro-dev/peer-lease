@@ -10,13 +10,13 @@ describe("tryReuseLoroPeerId", () => {
       const doc = new LoroDoc();
       const release = await tryReuseLoroPeerId(DOC_ID, doc);
       id = doc.peerIdStr;
-      await release();
+      await release.release();
     }
     {
       const doc = new LoroDoc();
       const release = await tryReuseLoroPeerId(DOC_ID, doc);
       expect(doc.peerIdStr).toBe(id);
-      const releaseTask = release();
+      const releaseTask = release.release();
       expect(release.isReleased()).toBe(true);
       await releaseTask;
     }
